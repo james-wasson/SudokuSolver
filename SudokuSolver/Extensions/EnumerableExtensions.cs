@@ -8,6 +8,19 @@ namespace SudokuSolver.Extensions
 {
     public static class EnumerableExtensions
     {
+        public static Dictionary<TKey, IEnumerable<TValue>> ToDictionaryGrouping<TKey, TValue>(this IEnumerable<TValue> list, Func<TValue, TKey> keySelect)
+            => list.GroupBy(p => keySelect.Invoke(p)).ToDictionary();
+        public static Dictionary<TKey, IEnumerable<TValueOut>> ToDictionaryGrouping<TKey, TValueIn, TValueOut>(this IEnumerable<TValueIn> list, Func<TValueIn, TKey> keySelect, Func<TValueIn, TValueOut> valueSelect)
+            => list.GroupBy(p => keySelect.Invoke(p), p => valueSelect.Invoke(p)).ToDictionary();
+        public static Dictionary<TKey, IEnumerable<TValue>> ToDictionaryGrouping<TKey, TValue>(this IEnumerable<TValue> list, Func<TValue, TKey> keySelect, IEqualityComparer<TKey> comparer)
+            => list.GroupBy(p => keySelect.Invoke(p), comparer).ToDictionary(comparer);
+        public static Dictionary<TKey, IEnumerable<TValueOut>> ToDictionaryGrouping<TKey, TValueIn, TValueOut>(this IEnumerable<TValueIn> list, Func<TValueIn, TKey> keySelect, Func<TValueIn, TValueOut> valueSelect, IEqualityComparer<TKey> comparer)
+            => list.GroupBy(p => keySelect.Invoke(p), p => valueSelect.Invoke(p), comparer).ToDictionary(comparer);
+        public static Dictionary<TKey, IEnumerable<TValue>> ToDictionary<TKey, TValue>(this IEnumerable<IGrouping<TKey, TValue>> groups)
+            => groups.ToDictionary(p => p.Key, p => p.AsEnumerable());
+        public static Dictionary<TKey, IEnumerable<TValue>> ToDictionary<TKey, TValue>(this IEnumerable<IGrouping<TKey, TValue>> groups, IEqualityComparer<TKey> comparer)
+            => groups.ToDictionary(p => p.Key, p => p.AsEnumerable(), comparer);
+
         public static IEnumerable<T> SelectMany<T>(this IEnumerable<IEnumerable<T>> list)
             => list.SelectMany(p => p);
         public static IEnumerable<T> Select<T>(this IEnumerable<T> list)
@@ -145,54 +158,28 @@ namespace SudokuSolver.Extensions
             return dictionary;
         }
 
-        public static IEnumerable<IEnumerable<T>> GetPermutations<T>(this IEnumerable<T> list) => list.GetPermutations(0, list.Count());
+        public static IEnumerable<IEnumerable<T>> GetPermutations<T>(this IEnumerable<T> list, int start, int end)
+            => Enumerable.Range(start, start - end).SelectMany(i => list.GetPermutations(i));
         public static IEnumerable<IEnumerable<T>> GetPermutations<T>(this IEnumerable<T> list, int length)
         {
-            if (length < 0) throw new Exception("Argument cannot be less than zero.");
-            if (length == 0) return Enumerable.Repeat(Enumerable.Empty<T>(), 1);
-            if (length == 1) return list.Select(t => Enumerable.Repeat(t, 1));
+            if (length == 1) return list.Select(t => new T[] { t });
             return GetPermutations(list, length - 1)
-                .SelectMany(t => list.Where(e => !t.Contains(e)), (t1, t2) => t1.Append(t2));
-        }
-        public static IEnumerable<IEnumerable<T>> GetPermutations<T>(this IEnumerable<T> list, int lengthStart, int lengthEnd)
-        {
-            lengthStart = Math.Min(lengthStart, lengthEnd);
-            lengthEnd = Math.Max(lengthStart, lengthEnd);
-            IEnumerable<IEnumerable<T>> result = null;
-            for (int len = lengthStart; len <= lengthEnd; len += 1)
-            {
-                if (result is null) result = GetPermutations(list, len);
-                else result = result.Concat(GetPermutations(list, len));
-            }
-            return result;
+                .SelectMany(t => list.Where(o => !t.Contains(o)),
+                    (t1, t2) => t1.Concat(new T[] { t2 }));
         }
 
+        public static IEnumerable<IEnumerable<T>> GetCombinations<T>(this IEnumerable<T> list, int start, int end) where T : IComparable
+            => Enumerable.Range(start, end - start + 1).SelectMany(i => list.GetCombinations(i));
+        public static IEnumerable<IEnumerable<T>> GetCombinations<T>(this IEnumerable<T> list, int length) where T : IComparable
+        {
+            if (length == 1) return list.Select(t => new T[] { t });
+            return list.GetCombinations(length - 1)
+                .SelectMany(t => list.Where(o => o.CompareTo(t.Last()) > 0),
+                    (t1, t2) => t1.Concat(new T[] { t2 }));
+        }
 
-        public static IEnumerable<IEnumerable<T>> GetCombinations<T>(this IEnumerable<T> list) => list.GetCombinations(0, list.Count());
-        public static IEnumerable<IEnumerable<T>> GetCombinations<T>(this IEnumerable<T> list, int length) => _GetCombinations(list, length, true);
-        private static IEnumerable<IEnumerable<T>> _GetCombinations<T>(IEnumerable<T> list, int length, bool isFirst)
-        {
-            if (length < 0) throw new Exception("Argument cannot be less than zero.");
-            if (length == 0) return Enumerable.Repeat(Enumerable.Empty<T>(), 1);
-            if (length == 1) return list.Select(t => Enumerable.Repeat(t, 1));
-            var rv = _GetCombinations(list, length - 1, false)
-                .SelectMany(t => list, (t1, t2) => t1.Append(t2));
-            if (isFirst)
-                rv = rv.RemoveAfterFirst(p => p.CountEQ(0));
-            return rv;
-        }
-        public static IEnumerable<IEnumerable<T>> GetCombinations<T>(this IEnumerable<T> list, int lengthStart, int lengthEnd)
-        {
-            lengthStart = Math.Min(lengthStart, lengthEnd);
-            lengthEnd = Math.Max(lengthStart, lengthEnd);
-            IEnumerable<IEnumerable<T>> result = null;
-            for (int len = lengthStart; len <= lengthEnd; len += 1)
-            {
-                if (result is null) result = GetCombinations(list, len);
-                else result = result.Concat(GetCombinations(list, len));
-            }
-            return result;
-        }
+        public static IEnumerable<IEnumerable<T>> GetRollingWindow<T>(this IEnumerable<T> list, int size)
+            => Enumerable.Range(0, list.Count() - size + 1).Select(i => list.Skip(i).Take(size));
 
         public static int GetRealHashCode(this IEnumerable<object> list, int inital, int shift)
         {

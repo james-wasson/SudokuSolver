@@ -45,6 +45,10 @@ namespace SudokuSolver.BoardData
         public IEnumerable<Row> Rows => Enumerable.Range(0, SIZE).Select(row => this.GetRow(row));
         public IEnumerable<Column> Columns => Enumerable.Range(0, SIZE).Select(column => this.GetColumn(column));
         public IEnumerable<Square> Squares => EnumerableHelper.GridRange(SQUARE_SIZE).Select(index => this.GetSquare(index.Row, index.Column));
+        public IEnumerable<IEnumerable<Cell>> Groupings =>
+            this.Squares.Select(s => s.AsEnumerable()).Concat(
+                this.Rows.Select(r => r.AsEnumerable())).Concat(
+                this.Columns.Select(c => c.AsEnumerable()));
 
         public void SetCellValue(CellValue value, int row, int column)
         {

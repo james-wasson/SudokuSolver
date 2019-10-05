@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using static SudokuSolver.BoardData.Board;
 
 namespace SudokuSolver
 {
@@ -12,11 +13,12 @@ namespace SudokuSolver
         public static void Main(string[] args)
         {
             runAll();
+            //runSingle();
         }
 
         public static void runSingle()
         {
-            Board startBoard = BoardReader.getBoard(9, 2);
+            Board startBoard = BoardReader.getBoard(15, 1);
             if (startBoard == null) return;
             Solver solver = new Solver(startBoard);
             Board endBoard = solver.Solve();

@@ -55,6 +55,8 @@ namespace SudokuSolver
             solveIteration = 0;
             while (true)
             {
+                if (Board.IsFilled())
+                    break;
                 solveIteration += 1;
                 if (PerformActionAndLog(FillLastInGroup))
                     continue;
@@ -62,11 +64,13 @@ namespace SudokuSolver
                     continue;
                 if (PerformActionAndLog(PointingPairs))
                     continue;
-                if (PerformActionAndLog(FillBoardByCellValue) && !Board.IsFilled())
+                if (PerformActionAndLog(FillBoardByCellValue))
                     continue;
-                if (PerformActionAndLog(FillNakedPairs))
+                if (PerformActionAndLog(FillBoardByLastTicks))
                     continue;
-                if (PerformActionAndLog(FillBoardByLastTicks) && !Board.IsFilled())
+                if (PerformActionAndLog(FillNaked))
+                    continue;
+                if (PerformActionAndLog(FillHidden))
                     continue;
                 break;
             }
@@ -77,6 +81,8 @@ namespace SudokuSolver
             => Board.Where(cell => QueryCanGoStore(cellValue, cell, emptyCheck));
         private IEnumerable<Cell> QueryCanGoStore(CellValue cellValue, IEnumerable<Cell> cells, bool emptyCheck = true)
             => cells.Where(cell => QueryCanGoStore(cellValue, cell, emptyCheck));
+        private IEnumerable<CellValue> QueryCanGoStore(Cell cell, bool emptyCheck = true)
+            => ValidCellValues.Where(cellValue => QueryCanGoStore(cellValue, cell, emptyCheck));
         private bool QueryCanGoStore(CellValue cellValue, Cell cell, bool emptyCheck = true)
         {
             if (emptyCheck && cell.IsFilled()) return false; // slight speed improvement
@@ -164,48 +170,54 @@ namespace SudokuSolver
             return anyChanged;
         }
 
-        private bool FillNakedPairs()
+        private bool FillHidden()
         {
             bool anyChanged = false;
-            foreach (var permutation in ValidCellValues.GetPermutations(2, 3))
+            foreach (var grouping in Board.Groupings)
             {
-                int permutationCount = permutation.Count();
-                var rows = Board.Rows.GroupBy(row => row.AsEnumerable(), row => {
-                    var sets = permutation.Select(cellValue => QueryCanGoStore(cellValue, row).ToHashSet());
-                    return sets.Where(s1 => sets.Any(s2 => s2 != s1 && s1.Overlaps(s2))
-                });
-                var columns = Board.Columns.GroupBy(row => row.AsEnumerable(), row => {
-                    var sets = permutation.Select(cellValue => QueryCanGoStore(cellValue, row).ToHashSet());
-                    return sets.Where(s1 => sets.Any(s2 => s2 != s1 && s1.Overlaps(s2))
-                });
-                var squares = Board.Squares.GroupBy(row => row.AsEnumerable(), row => {
-                    var sets = permutation.Select(cellValue => QueryCanGoStore(cellValue, row).ToHashSet());
-                    return sets.Where(s1 => sets.Any(s2 => s2 != s1 && s1.Overlaps(s2))
-                });
-                var groups = rows.Select(p => p.AsEnumerable())
-                    .Concat(columns.Select(p => p.AsEnumerable()))
-                    .Concat(squares.Select(p => p.AsEnumerable()));
-                foreach (var group in groups)
+                var cellGroupings = grouping.Select(cell => (CellValues: QueryCanGoStore(cell), Cell: cell))
+                        .Where(p => p.CellValues.CountGT(1));
+                foreach (var combo in ValidCellValues.GetCombinations(2, 3).Select(p => p.ToHashSet()))
                 {
-                    IEnumerable<Cell> allValueCanGoCells = group.AsEnumerable();
-                    foreach(var cellValue in permutation)
+                    var posHidden = cellGroupings.Where(obj => combo.IsSubsetOf(obj.CellValues));
+                    // Found a naked pair or triple
+                    if (posHidden.CountEQ(combo.Count()))
                     {
-                        allValueCanGoCells = allValueCanGoCells.Intersect(QueryCanGoStore(cellValue, group));
+                        ValidCellValues.WhereNot(combo)
+                            .ForEach(value =>
+                                posHidden.Select(p => p.Cell).ForEach(cell =>
+                                    anyChanged = SetCanGoStore(value, cell) || anyChanged));
                     }
-                    if (allValueCanGoCells.CountEQ(permutation.Count()))
-                    {
-                        // set so others cannot go here
-                        ValidCellValues.Except(permutation).ForEach(setCellValue =>
-                        {
-                            allValueCanGoCells.ForEach(cell => {
-                                anyChanged = SetCanGoStore(setCellValue, cell) || anyChanged;
-                            });
-                        });
-                        if (anyChanged)
-                            return true;
-                    }
+                    // immediately return because this is an expensive opperation
+                    if (anyChanged)
+                        return anyChanged;
                 }
+            }
+            return anyChanged;
+        }
 
+        private bool FillNaked()
+        {
+            bool anyChanged = false;
+            foreach (var grouping in Board.Groupings)
+            {
+                var cellGroupings = grouping.Select(cell => (CellValues: QueryCanGoStore(cell), Cell: cell))
+                        .Where(p => p.CellValues.CountGT(1));
+                foreach (var combo in ValidCellValues.GetCombinations(2, 3).Select(p => p.ToHashSet()))
+                {
+                    var posNaked = cellGroupings.Where(obj => combo.IsSupersetOf(obj.CellValues));
+                    // Found a naked pair or triple
+                    if (posNaked.CountEQ(combo.Count()))
+                    {
+                        grouping.WhereNot(posNaked.Select(p => p.Cell))
+                            .ForEach(otherCell =>
+                                combo.ForEach(value =>
+                                    anyChanged = SetCanGoStore(value, otherCell) || anyChanged));
+                    }
+                    // immediately return because this is an expensive opperation
+                    if (anyChanged)
+                        return anyChanged;
+                }
             }
             return anyChanged;
         }
